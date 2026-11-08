@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Compteur de Vitesse</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      margin: 0;
+      background-color: #121212;
+      color: #ffffff;
+    }
+    .speed-card {
+      text-align: center;
+      padding: 2rem;
+      background: #1e1e1e;
+      border-radius: 20px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    }
+    .speed-value {
+      font-size: 5rem;
+      font-weight: bold;
+      color: #00e676;
+      line-height: 1;
+    }
+    .unit {
+      font-size: 1.5rem;
+      color: #b0bec5;
+      margin-top: 0.5rem;
+    }
+    .status {
+      margin-top: 1.5rem;
+      font-size: 0.9rem;
+      color: #78909c;
+    }
+  </style>
+</head>
+<body>
+
+  <div class="speed-card">
+    <div class="speed-value" id="speed">0</div>
+    <div class="unit">km/h</div>
+    <div class="status" id="status">Recherche du signal GPS...</div>
+  </div>
+
+  <script>
+    const speedDisplay = document.getElementById('speed');
+    const statusDisplay = document.getElementById('status');
+
+    if ('geolocation' in navigator) {
+      navigator.geolocation.watchPosition(
+        (position) => {
+          const speedMS = position.coords.speed;
+
+          if (speedMS !== null && !isNaN(speedMS)) {
+            // Conversion de m/s en km/h (arrondi)
+            const speedKMH = Math.round(speedMS * 3.6);
+            speedDisplay.textContent = speedKMH;
+            statusDisplay.textContent = "Signal GPS actif";
+          } else {
+            // À l'arrêt ou signal trop faible pour calculer la vitesse
+            speedDisplay.textContent = "0";
+            statusDisplay.textContent = "En attente de déplacement...";
+          }
+        },
+        (error) => {
+          switch (error.code) {
+            case error.PERMISSION_DENIED:
+              statusDisplay.textContent = "Autorisation GPS refusée.";
+              break;
+            case error.POSITION_UNAVAILABLE:
+              statusDisplay.textContent = "Signal GPS indisponible.";
+              break;
+            case error.TIMEOUT:
+              statusDisplay.textContent = "Délai d'attente GPS dépassé.";
+              break;
+          }
+        },
+        {
+          enableHighAccuracy: true, // Force l'utilisation de la puce GPS
+          maximumAge: 0,
+          timeout: 5000
+        }
+      );
+    } else {
+      statusDisplay.textContent = "Géolocalisation non supportée par votre navigateur.";
+    }
+  </script>
+</body>
+</html>
