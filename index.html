@@ -87,6 +87,7 @@
     #map {
       width: 100%;
       height: 100%;
+      background: #1a1a1a;
     }
 
     /* Quand la carte est masquée */
@@ -175,7 +176,7 @@
     let isMapVisible = true;
     let isHudMode = false;
 
-    // 1. Empêcher la mise en veille de l'écran (Screen Wake Lock API)
+    // 1. Maintien de l'écran allumé
     async function requestWakeLock() {
       try {
         if ('wakeLock' in navigator) {
@@ -190,7 +191,7 @@
       if (document.visibilityState === 'visible') requestWakeLock();
     });
 
-    // 2. Gestion du mode HUD (Miroir)
+    // 2. Mode HUD (Miroir)
     btnHud.addEventListener('click', () => {
       isHudMode = !isHudMode;
       appContainer.classList.toggle('hud-mode', isHudMode);
@@ -204,17 +205,17 @@
       btnMap.classList.toggle('btn-active', !isMapVisible);
       btnMap.innerHTML = isMapVisible ? '<span>🗺️</span> Carte' : '<span>⚡</span> Vitesse seule';
 
-      // Forcer le redimensionnement de la carte lors de la réapparition
       if (isMapVisible) {
         setTimeout(() => map.invalidateSize(), 300);
       }
     });
 
-    // 4. Initialisation de la carte (Style Apple / Voyager)
+    // 4. Initialisation de la carte (OpenStreetMap gratuit sans clé d'API)
     const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
-    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+    
+    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       maxZoom: 19,
-      attribution: '&copy; CARTO'
+      attribution: '&copy; OpenStreetMap'
     }).addTo(map);
 
     let userMarker = null;
@@ -230,7 +231,6 @@
           const accuracy = position.coords.accuracy;
           const speedMS = position.coords.speed;
 
-          // Calcul et affichage de la vitesse
           if (speedMS !== null && !isNaN(speedMS)) {
             speedDisplay.textContent = Math.round(speedMS * 3.6);
             statusDisplay.textContent = "GPS connecté";
@@ -239,7 +239,6 @@
             statusDisplay.textContent = "GPS connecté (à l'arrêt)";
           }
 
-          // Mise à jour de la position sur la carte
           const userLatLng = [lat, lng];
 
           if (!userMarker) {
