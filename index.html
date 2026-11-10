@@ -2,94 +2,286 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Compteur de Vitesse</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Compteur & Navigation HUD</title>
+  
+  <!-- CSS Leaflet pour la carte -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  
   <style>
-    body {
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    
+    body, html {
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: #000000;
+      color: #ffffff;
+    }
+
+    /* Conteneur principal en grille paysage */
+    #app-container {
+      display: flex;
+      width: 100vw;
+      height: 100vh;
+      transition: all 0.3s ease;
+    }
+
+    /* Effet miroir pour le mode HUD */
+    .hud-mode {
+      transform: scaleX(-1);
+    }
+
+    /* Section Compteur (Gauche ou Plein écran) */
+    #speed-section {
+      flex: 1;
       display: flex;
       flex-direction: column;
       justify-content: center;
       align-items: center;
-      min-height: 100vh;
-      margin: 0;
-      background-color: #121212;
-      color: #ffffff;
+      background: #000000;
+      position: relative;
+      z-index: 10;
+      transition: all 0.3s ease;
     }
-    .speed-card {
-      text-align: center;
-      padding: 2rem;
-      background: #1e1e1e;
-      border-radius: 20px;
-      box-shadow: 0 10px 30px rgba(0,0,0,0.5);
-    }
+
     .speed-value {
-      font-size: 5rem;
-      font-weight: bold;
+      font-size: 28vh;
+      font-weight: 900;
       color: #00e676;
-      line-height: 1;
+      line-height: 0.9;
+      font-variant-numeric: tabular-nums;
+      text-shadow: 0 0 20px rgba(0, 230, 118, 0.3);
     }
+
     .unit {
-      font-size: 1.5rem;
-      color: #b0bec5;
-      margin-top: 0.5rem;
+      font-size: 4vh;
+      color: #888888;
+      font-weight: 700;
+      letter-spacing: 2px;
+      margin-top: 1vh;
     }
+
     .status {
-      margin-top: 1.5rem;
+      position: absolute;
+      bottom: 15px;
+      font-size: 0.85rem;
+      color: #555555;
+    }
+
+    /* Section Carte (Droite) */
+    #map-section {
+      flex: 1;
+      height: 100vh;
+      position: relative;
+      transition: all 0.3s ease;
+    }
+
+    #map {
+      width: 100%;
+      height: 100%;
+    }
+
+    /* Quand la carte est masquée */
+    #app-container.hide-map #map-section {
+      display: none;
+    }
+
+    /* Barre d'outils / Boutons de contrôle */
+    .controls {
+      position: fixed;
+      top: 15px;
+      right: 15px;
+      z-index: 2000;
+      display: flex;
+      gap: 10px;
+    }
+
+    .btn {
+      background: rgba(30, 30, 30, 0.85);
+      backdrop-filter: blur(10px);
+      -webkit-backdrop-filter: blur(10px);
+      border: 1px solid rgba(255, 255, 255, 0.2);
+      color: #ffffff;
+      padding: 10px 16px;
+      border-radius: 12px;
       font-size: 0.9rem;
-      color: #78909c;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+    }
+
+    .btn:active {
+      transform: scale(0.95);
+      background: rgba(50, 50, 50, 0.9);
+    }
+
+    .btn-active {
+      border-color: #00e676;
+      color: #00e676;
     }
   </style>
 </head>
 <body>
 
-  <div class="speed-card">
-    <div class="speed-value" id="speed">0</div>
-    <div class="unit">km/h</div>
-    <div class="status" id="status">Recherche du signal GPS...</div>
+  <!-- Barre de commandes -->
+  <div class="controls">
+    <button class="btn" id="btn-hud">
+      <span>🪞</span> HUD (Miroir)
+    </button>
+    <button class="btn" id="btn-map">
+      <span>🗺️</span> Carte
+    </button>
   </div>
 
+  <!-- Conteneur d'affichage principal -->
+  <div id="app-container">
+    
+    <!-- Zone Vitesse -->
+    <div id="speed-section">
+      <div class="speed-value" id="speed">0</div>
+      <div class="unit">KM/H</div>
+      <div class="status" id="status">Recherche du GPS...</div>
+    </div>
+
+    <!-- Zone Carte -->
+    <div id="map-section">
+      <div id="map"></div>
+    </div>
+
+  </div>
+
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+
   <script>
+    const appContainer = document.getElementById('app-container');
     const speedDisplay = document.getElementById('speed');
     const statusDisplay = document.getElementById('status');
+    const btnHud = document.getElementById('btn-hud');
+    const btnMap = document.getElementById('btn-map');
 
+    let wakeLock = null;
+    let isMapVisible = true;
+    let isHudMode = false;
+
+    // 1. Empêcher la mise en veille de l'écran (Screen Wake Lock API)
+    async function requestWakeLock() {
+      try {
+        if ('wakeLock' in navigator) {
+          wakeLock = await navigator.wakeLock.request('screen');
+        }
+      } catch (err) {
+        console.log('Wake Lock non actif:', err.message);
+      }
+    }
+    requestWakeLock();
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible') requestWakeLock();
+    });
+
+    // 2. Gestion du mode HUD (Miroir)
+    btnHud.addEventListener('click', () => {
+      isHudMode = !isHudMode;
+      appContainer.classList.toggle('hud-mode', isHudMode);
+      btnHud.classList.toggle('btn-active', isHudMode);
+    });
+
+    // 3. Masquer / Afficher la carte
+    btnMap.addEventListener('click', () => {
+      isMapVisible = !isMapVisible;
+      appContainer.classList.toggle('hide-map', !isMapVisible);
+      btnMap.classList.toggle('btn-active', !isMapVisible);
+      btnMap.innerHTML = isMapVisible ? '<span>🗺️</span> Carte' : '<span>⚡</span> Vitesse seule';
+
+      // Forcer le redimensionnement de la carte lors de la réapparition
+      if (isMapVisible) {
+        setTimeout(() => map.invalidateSize(), 300);
+      }
+    });
+
+    // 4. Initialisation de la carte (Style Apple / Voyager)
+    const map = L.map('map', { zoomControl: false }).setView([0, 0], 2);
+    L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      maxZoom: 19,
+      attribution: '&copy; CARTO'
+    }).addTo(map);
+
+    let userMarker = null;
+    let accuracyCircle = null;
+    let firstFix = true;
+
+    // 5. Géolocalisation & Vitesse
     if ('geolocation' in navigator) {
       navigator.geolocation.watchPosition(
         (position) => {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          const accuracy = position.coords.accuracy;
           const speedMS = position.coords.speed;
 
+          // Calcul et affichage de la vitesse
           if (speedMS !== null && !isNaN(speedMS)) {
-            // Conversion de m/s en km/h (arrondi)
-            const speedKMH = Math.round(speedMS * 3.6);
-            speedDisplay.textContent = speedKMH;
-            statusDisplay.textContent = "Signal GPS actif";
+            speedDisplay.textContent = Math.round(speedMS * 3.6);
+            statusDisplay.textContent = "GPS connecté";
           } else {
-            // À l'arrêt ou signal trop faible pour calculer la vitesse
             speedDisplay.textContent = "0";
-            statusDisplay.textContent = "En attente de déplacement...";
+            statusDisplay.textContent = "GPS connecté (à l'arrêt)";
+          }
+
+          // Mise à jour de la position sur la carte
+          const userLatLng = [lat, lng];
+
+          if (!userMarker) {
+            userMarker = L.circleMarker(userLatLng, {
+              radius: 8,
+              fillColor: '#007aff',
+              color: '#ffffff',
+              weight: 3,
+              fillOpacity: 1
+            }).addTo(map);
+
+            accuracyCircle = L.circle(userLatLng, {
+              radius: accuracy,
+              color: '#007aff',
+              fillColor: '#007aff',
+              fillOpacity: 0.15,
+              weight: 1
+            }).addTo(map);
+          } else {
+            userMarker.setLatLng(userLatLng);
+            accuracyCircle.setLatLng(userLatLng);
+            accuracyCircle.setRadius(accuracy);
+          }
+
+          if (firstFix) {
+            map.setView(userLatLng, 16);
+            firstFix = false;
+          } else {
+            map.panTo(userLatLng);
           }
         },
         (error) => {
-          switch (error.code) {
-            case error.PERMISSION_DENIED:
-              statusDisplay.textContent = "Autorisation GPS refusée.";
-              break;
-            case error.POSITION_UNAVAILABLE:
-              statusDisplay.textContent = "Signal GPS indisponible.";
-              break;
-            case error.TIMEOUT:
-              statusDisplay.textContent = "Délai d'attente GPS dépassé.";
-              break;
-          }
+          statusDisplay.textContent = "Erreur signal GPS";
         },
         {
-          enableHighAccuracy: true, // Force l'utilisation de la puce GPS
+          enableHighAccuracy: true,
           maximumAge: 0,
-          timeout: 5000
+          timeout: 10000
         }
       );
     } else {
-      statusDisplay.textContent = "Géolocalisation non supportée par votre navigateur.";
+      statusDisplay.textContent = "GPS non pris en charge";
     }
   </script>
 </body>
